@@ -13,20 +13,6 @@ type cliCommand struct {
     callback    func() error
 }
 
-var commands = map[string]cliCommand{
-			"exit": {
-				name: "exit",
-				description: "Exit the Pokedex",
-				callback: commandExit,
-				},
-			"help": {
-				name: "help",
-				description: "Displays a help message",
-				callback: commandHelp,
-				},
-		}
-
-
 func cleanInput(s string) []string {
 	var results []string
 	lowerString := strings.ToLower(s)
@@ -37,14 +23,16 @@ func cleanInput(s string) []string {
 
 func startRepl() {
 	userResponse := bufio.NewScanner(os.Stdin)
+	commands := getCommands()
 	for {
 		fmt.Print("Pokedex > ")
 		userResponse.Scan()
-		resp := cleanInput(userResponse.Text())
-		if len(resp) == 0 {
+		resps := cleanInput(userResponse.Text())
+		if len(resps) == 0 {
 			continue
 		}
-		if cmd, ok := commands[resp]; ok == true {
+		commandName := resps[0]
+		if cmd, ok := commands[commandName]; ok == true {
 			if err := cmd.callback(); err != nil {
 				fmt.Printf("error calling command callback: %v", err)
 			}
@@ -55,14 +43,33 @@ func startRepl() {
 }
 
 func commandExit() error {
-	fmt.Print("Closing the Pokedex... Goodbye!")
+	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
+	return nil
 }
 
 func commandHelp() error {
-	fmt.Println("Usage:")
+	fmt.Println("Welcome to the Pokedex!\nUsage:\n\n")
+	commands := getCommands()
 	for _, cmd := range commands {
-		fmt.Printf("%v: %v\n", cmd.name, cmd.description)
+		fmt.Printf("%s: %s\n", cmd.name, cmd.description)
 	}
 	return nil
+}
+
+func getCommands() map[string]cliCommand {
+	commands := map[string]cliCommand{
+		"exit": {
+			name: "exit",
+			description: "Exit the Pokedex",
+			callback: commandExit,
+			},
+		"help": {
+			name: "help",
+			description: "Displays a help message",
+			callback: commandHelp,
+			},
+	}
+	return commands
+
 }
