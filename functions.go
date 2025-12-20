@@ -5,6 +5,9 @@ import (
 	"strings"
 	"bufio"
 	"os"
+	"io"
+	"encoding/json"
+	"net/http"
 )
 
 type cliCommand struct {
@@ -57,8 +60,20 @@ func commandHelp() error {
 	return nil
 }
 
+func commandMap() error {
+	resp, err := newHttpRequest("location-areas")
+	if err != nil {
+		return fmt.Errorf("error making http request to location-areas")
+	}
+	err2 := logHttpResponse(resp)
+	if err2 != nil {
+		return fmt.Errorf("error reading http json response: %v", err2)
+	}
+	return nil
+}
+
 func getCommands() map[string]cliCommand {
-	commands := map[string]cliCommand{
+	return commands := map[string]cliCommand{
 		"exit": {
 			name: "exit",
 			description: "Exit the Pokedex",
@@ -69,7 +84,34 @@ func getCommands() map[string]cliCommand {
 			description: "Displays a help message",
 			callback: commandHelp,
 			},
+		"map":	{
+			name: "map",
+			description: "Displays locations from the pokemon world."
+			callback: commandMap,
+			},
 	}
-	return commands
 
+}
+
+func newHttpRequest(endpoint string) (http.Response, error) {
+	fullUrl := "https://pokeapi.co/api/v2" + endpoint
+	resp, err := http.GET(fullUrl)
+	if err != nil {
+		return nil, fmt.Errorf("error creating http GET request: %v", err)
+	}
+	return resp, nil
+}
+
+func logHttpResponse(r http.Response) error {
+	defer r.Body.Close()
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return fmt.Errorf("error reading http request response: %v", err)
+	}
+	text, err2 := json.Unmarshal(data)
+	if err2 != nil {
+		return fmt.Errorf("error unmarshaling json response: %v", err2)
+	}
+	fmt.Println(text)
+	return nil
 }
