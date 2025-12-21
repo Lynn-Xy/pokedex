@@ -16,6 +16,11 @@ type cliCommand struct {
     callback    func() error
 }
 
+type config struct {
+	next string
+	previous string
+}
+
 func cleanInput(s string) []string {
 	var results []string
 	lowerString := strings.ToLower(s)
@@ -45,13 +50,13 @@ func startRepl() {
 	}
 }
 
-func commandExit() error {
+func commandExit(c *config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp() error {
+func commandHelp(c *config) error {
 	fmt.Println("Welcome to the Pokedex!\nUsage:\n\n")
 	commands := getCommands()
 	for _, cmd := range commands {
@@ -60,7 +65,7 @@ func commandHelp() error {
 	return nil
 }
 
-func commandMap() error {
+func commandMap(c *config) error {
 	resp, err := newHttpRequest("location-areas")
 	if err != nil {
 		return fmt.Errorf("error making http request to location-areas")
@@ -69,6 +74,10 @@ func commandMap() error {
 	if err2 != nil {
 		return fmt.Errorf("error reading http json response: %v", err2)
 	}
+	return nil
+}
+
+func commandMapb(c *config) error {
 	return nil
 }
 
@@ -86,15 +95,20 @@ func getCommands() map[string]cliCommand {
 			},
 		"map":	{
 			name: "map",
-			description: "Displays locations from the pokemon world."
+			description: "Displays the next 20 locations from the pokemon world.",
 			callback: commandMap,
+			},
+		"mapb": {
+			name: "mapb",
+			description: "Displays the last 20 locations from the pokemon world.",
+			callback: commandMapb,
 			},
 	}
 
 }
 
 func newHttpRequest(endpoint string) (http.Response, error) {
-	fullUrl := "https://pokeapi.co/api/v2" + endpoint
+	fullUrl := "https://pokeapi.co/api/v2/" + endpoint
 	resp, err := http.GET(fullUrl)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http GET request: %v", err)
@@ -102,16 +116,19 @@ func newHttpRequest(endpoint string) (http.Response, error) {
 	return resp, nil
 }
 
-func logHttpResponse(r http.Response) error {
+func logHttpResponse(r *http.Response) error {
 	defer r.Body.Close()
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		return fmt.Errorf("error reading http request response: %v", err)
 	}
-	text, err2 := json.Unmarshal(data)
+	text := map[string]interface{}{}
+	err2 := json.Unmarshal(data, &text)
 	if err2 != nil {
 		return fmt.Errorf("error unmarshaling json response: %v", err2)
 	}
-	fmt.Println(text)
+	for _, value := range text {
+		fmt.Println(value)
+	}
 	return nil
 }
