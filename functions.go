@@ -40,7 +40,23 @@ func startRepl() {
 			continue
 		}
 		commandName := resps[0]
+		offsetCount := 0
 		if cmd, ok := commands[commandName]; ok == true {
+			if commandName == "map" { 
+				if err := cmd.callback(offsetCount); err!= nil {
+					fmt.Printf("error calling callback: %v", err)
+				}
+				offsetCount +=20
+			if commandName == "mapb" {
+				offsetCount -= 20
+				if offsetCount < 0 {
+					fmt.Println("you're on the first page")
+				} else { 
+					if err := cmd.callback(offsetCount); err != nil {
+						fmt.Printf("error calling back callback: %v", err)
+				}
+			}
+			}
 			if err := cmd.callback(); err != nil {
 				fmt.Printf("error calling command callback: %v", err)
 			}
@@ -50,13 +66,13 @@ func startRepl() {
 	}
 }
 
-func commandExit(c *config) error {
+func commandExit() error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(c *config) error {
+func commandHelp() error {
 	fmt.Println("Welcome to the Pokedex!\nUsage:\n\n")
 	commands := getCommands()
 	for _, cmd := range commands {
@@ -65,8 +81,11 @@ func commandHelp(c *config) error {
 	return nil
 }
 
-func commandMap(c *config) error {
-	resp, err := newHttpRequest("location-areas")
+func commandMap(offset int) error {
+	endpoint := "location-areas"
+	offsetUrl := "?offset=" + string(offset)
+	fullUrl := endpoint + offsetUrl
+	resp, err := newHttpRequest(fullUrl)
 	if err != nil {
 		return fmt.Errorf("error making http request to location-areas")
 	}
@@ -74,10 +93,6 @@ func commandMap(c *config) error {
 	if err2 != nil {
 		return fmt.Errorf("error reading http json response: %v", err2)
 	}
-	return nil
-}
-
-func commandMapb(c *config) error {
 	return nil
 }
 
