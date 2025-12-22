@@ -8,17 +8,26 @@ import (
 	"io"
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 type cliCommand struct {
-    name        string
+    name string
     description string
-    callback    func() error
+    callback func(c *config) error
 }
 
 type config struct {
 	next string
 	previous string
+	pageOffset int
+}
+
+type jsonResponse struct {
+	Count int `json:"count"`
+	Next string	`json:"next"`
+	Previous string	`json:"previous"`
+	Results []map[string]interface{} `json:"results"`
 }
 
 func cleanInput(s string) []string {
@@ -32,33 +41,38 @@ func cleanInput(s string) []string {
 func startRepl() {
 	userResponse := bufio.NewScanner(os.Stdin)
 	commands := getCommands()
+
+	c := &config{
+		next: "",
+		previous: "",
+		pageOffset: 0,
+	}
+
 	for {
+
 		fmt.Print("Pokedex > ")
 		userResponse.Scan()
 		resps := cleanInput(userResponse.Text())
+
 		if len(resps) == 0 {
 			continue
 		}
+
 		commandName := resps[0]
-		offsetCount := 0
 		if cmd, ok := commands[commandName]; ok == true {
-			if commandName == "map" { 
-				if err := cmd.callback(offsetCount); err!= nil {
-					fmt.Printf("error calling callback: %v", err)
-				}
-				offsetCount +=20
 			if commandName == "mapb" {
-				offsetCount -= 20
-				if offsetCount < 0 {
+				if c.pageOffset == 0 {
 					fmt.Println("you're on the first page")
-				} else { 
-					if err := cmd.callback(offsetCount); err != nil {
-						fmt.Printf("error calling back callback: %v", err)
+					continue
+				} else {
+					c.pageOffset -= 20
 				}
 			}
-			}
-			if err := cmd.callback(); err != nil {
+			if err := cmd.callback(c); err != nil {
 				fmt.Printf("error calling command callback: %v", err)
+			}
+			if commandName == "map" {
+				c.pageOffset += 20
 			}
 		} else {
 			fmt.Println("Unknown command")
@@ -66,13 +80,13 @@ func startRepl() {
 	}
 }
 
-func commandExit() error {
+func commandExit(c *config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp() error {
+func commandHelp(c *config) error {
 	fmt.Println("Welcome to the Pokedex!\nUsage:\n\n")
 	commands := getCommands()
 	for _, cmd := range commands {
@@ -81,9 +95,9 @@ func commandHelp() error {
 	return nil
 }
 
-func commandMap(offset int) error {
-	endpoint := "location-areas"
-	offsetUrl := "?offset=" + string(offset)
+func commandMap(c *config) error {
+	endpoint := "location-area"
+	offsetUrl := "?offset=" + strconv.Itoa(c.pageOffset)
 	fullUrl := endpoint + offsetUrl
 	resp, err := newHttpRequest(fullUrl)
 	if err != nil {
@@ -97,7 +111,7 @@ func commandMap(offset int) error {
 }
 
 func getCommands() map[string]cliCommand {
-	return commands := map[string]cliCommand{
+	return map[string]cliCommand{
 		"exit": {
 			name: "exit",
 			description: "Exit the Pokedex",
@@ -115,16 +129,16 @@ func getCommands() map[string]cliCommand {
 			},
 		"mapb": {
 			name: "mapb",
-			description: "Displays the last 20 locations from the pokemon world.",
-			callback: commandMapb,
+			description: "Displays the previous 20 locations from the pokemon world.",
+			callback: commandMap,
 			},
 	}
 
 }
 
-func newHttpRequest(endpoint string) (http.Response, error) {
+func newHttpRequest(endpoint string) (*http.Response, error) {
 	fullUrl := "https://pokeapi.co/api/v2/" + endpoint
-	resp, err := http.GET(fullUrl)
+	resp, err := http.Get(fullUrl)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http GET request: %v", err)
 	}
@@ -137,13 +151,13 @@ func logHttpResponse(r *http.Response) error {
 	if err != nil {
 		return fmt.Errorf("error reading http request response: %v", err)
 	}
-	text := map[string]interface{}{}
-	err2 := json.Unmarshal(data, &text)
+	resp := &jsonResponse{}
+	err2 := json.Unmarshal(data, resp)
 	if err2 != nil {
 		return fmt.Errorf("error unmarshaling json response: %v", err2)
 	}
-	for _, value := range text {
-		fmt.Println(value)
+	for _, value := range resp.Results {
+		fmt.Println(value["name"])
 	}
 	return nil
 }
