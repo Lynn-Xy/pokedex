@@ -16,9 +16,8 @@ type cacheEntry struct {
 	val []byte
 }
 
-func NewCache(interval time.Duration) Cache {
-	c := Cache{
-		mu: sync.Mutex{},
+func NewCache(interval time.Duration) *Cache {
+	c := &Cache{
 		value: map[string]cacheEntry{},
 		interval: interval,
 	}
@@ -39,11 +38,11 @@ func (c *Cache) Add(key string, val []byte) {
 func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.value[key]; ok == true {
-		return c.value[key].val, true
-	} else {
+	entry, ok := c.value[key]
+	if !ok {
 		return nil, false
 	}
+	return entry.val, true
 }
 
 func (c *Cache) reapLoop() {
