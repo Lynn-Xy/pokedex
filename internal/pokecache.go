@@ -1,13 +1,11 @@
 package pokecache
 
 import (
-	"fmt"
 	"sync"
 	"time"
-	"errors"
 )
 
-type safeCache struct {
+type Cache struct {
 	mu sync.Mutex
 	value map[string]cacheEntry
 	interval time.Duration
@@ -18,51 +16,45 @@ type cacheEntry struct {
 	val []byte
 }
 
-func NewCache() (safeCache, error) {
-	c := safeCache{
-		mu: sync.Mutex{}
-		value: map[string]cacheEntry{}
+func NewCache(interval time.Duration) Cache {
+	c := Cache{
+		mu: sync.Mutex{},
+		value: map[string]cacheEntry{},
+		interval: interval,
 	}
+	go c.reapLoop()
+	return c
 }
 
-func (c *safeCache) Add(key string, val []byte) error {
-	if len(c.value) == 0 {
-		return errors.New("error adding cache entry: cache value is empty")
-	}
+func (c *Cache) Add(key string, val []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.value[key]; ok == false {
-		mins, _ := time.ParseDuration("5m")
-		newCacheEntry := cacheEntry{
-			createdAt: time.Now(),
-			interval: mins,
-			value: val,
-		}
-		c.value[key] = newCacheEntry
-		return nil
-	} else {
-		return errors.New("error adding cache entry: entry already exists in cache")
+	newCacheEntry := cacheEntry{
+		createdAt: time.Now(),
+		val: val,
 	}
-}
+	c.value[key] = newCacheEntry
+	}
 
-func (c *safeCache) Get(key string) (cacheEntry, bool, error) {
+func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.value[key]; ok == true {
-		return c.value[key], true, nil
+		return c.value[key].val, true
 	} else {
-		return nil, false, errors.New("error getting cache entry: entry does not exist in cache")
+		return nil, false
 	}
 }
 
-func (c *safeCache) reapLoop() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for key, entry := range c.value {
-		if time.Since(entry.createdAt) >= c.interval {
-			delete(c.value, key)
+func (c *Cache) reapLoop() {
+	ticker := time.NewTicker(c.interval)
+	for range ticker.C {
+		c.mu.Lock()
+		for key, entry := range c.value {
+			if time.Since(entry.createdAt) >= c.interval {
+				delete(c.value, key)
+		}
+		}
+		c.mu.Unlock()
 	}
 }
-}
-
-

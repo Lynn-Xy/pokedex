@@ -8,7 +8,8 @@ import (
 	"io"
 	"encoding/json"
 	"net/http"
-	"strconv"
+	"pokedex/internal/pokecache"
+	"time"
 )
 
 type cliCommand struct {
@@ -20,7 +21,7 @@ type cliCommand struct {
 type config struct {
 	next string
 	previous string
-	pageOffset int
+	cache pokecache.Cache
 }
 
 type jsonResponse struct {
@@ -43,9 +44,9 @@ func startRepl() {
 	commands := getCommands()
 
 	c := &config{
-		next: "",
+		next: "https://pokeapi.co/api/v2/location-area?offset=0&limit=20",
 		previous: "",
-		pageOffset: 0,
+		cache: pokecache.NewCache(5 * 60 * time.Second),
 	}
 
 	for {
@@ -60,19 +61,9 @@ func startRepl() {
 
 		commandName := resps[0]
 		if cmd, ok := commands[commandName]; ok == true {
-			if commandName == "mapb" {
-				if c.pageOffset == 0 {
-					fmt.Println("you're on the first page")
-					continue
-				} else {
-					c.pageOffset -= 20
-				}
-			}
-			if err := cmd.callback(c); err != nil {
-				fmt.Printf("error calling command callback: %v", err)
-			}
-			if commandName == "map" {
-				c.pageOffset += 20
+			err := cmd.callback(c)
+			if err != nil {
+				fmt.Printf("error executing command %s: %v\n", commandName, err)
 			}
 		} else {
 			fmt.Println("Unknown command")
@@ -96,17 +87,62 @@ func commandHelp(c *config) error {
 }
 
 func commandMap(c *config) error {
-	endpoint := "location-area"
-	offsetUrl := "?offset=" + strconv.Itoa(c.pageOffset)
-	fullUrl := endpoint + offsetUrl
-	resp, err := newHttpRequest(fullUrl)
+	if cachedResp, found := c.cache.Get(c.next); found == true {
+		respStruct, err2 := readJsonResponse(cachedResp)
+		if err2 != nil {
+			return fmt.Errorf("error reading cached http json response: %v", err2)
+		}
+		err3 := logHttpResponse(respStruct)
+		if err3 != nil {
+			return fmt.Errorf("error logging http response: %v", err3)
+		}
+		c.next = respStruct.Next
+		c.previous = respStruct.Previous
+		return nil
+	}
+	resp, err := newHttpRequest(c.next)
 	if err != nil {
 		return fmt.Errorf("error making http request to location-areas")
 	}
-	err2 := logHttpResponse(resp)
+	c.cache.Add(resp, []byte(c.next))
+	respStruct, err2 := readJsonResponse(resp)
 	if err2 != nil {
 		return fmt.Errorf("error reading http json response: %v", err2)
 	}
+	c.next = respStruct.Next
+	c.previous = respStruct.Previous
+	return nil
+}
+
+func commandMapb(c *config) error {
+	if c.previous == "" {
+		fmt.Println("you're on the first page")
+		return nil
+	}
+	if cachedResp, found := c.cache.Get(c.previous); found == true {
+		respStruct, err2 := readJsonResponse(cachedResp)
+		if err2 != nil {
+			return fmt.Errorf("error reading cached http json response: %v", err2)
+		}
+		err3 := logHttpResponse(respStruct)
+		if err3 != nil {
+			return fmt.Errorf("error logging http response: %v", err3)
+		}
+		c.next = respStruct.Next
+		c.previous = respStruct.Previous
+		return nil
+	}
+	resp, err := newHttpRequest(c.previous)
+	if err != nil {
+		return fmt.Errorf("error making http request to location-areas")
+	}
+	c.cache.Add(resp, []byte(c.previous))
+	respStruct, err2 := readJsonResponse(resp)
+	if err2 != nil {
+		return fmt.Errorf("error reading http json response: %v", err2)
+	}
+	c.next = respStruct.Next
+	c.previous = respStruct.Previous
 	return nil
 }
 
@@ -130,32 +166,35 @@ func getCommands() map[string]cliCommand {
 		"mapb": {
 			name: "mapb",
 			description: "Displays the previous 20 locations from the pokemon world.",
-			callback: commandMap,
+			callback: commandMapb,
 			},
 	}
 
 }
 
-func newHttpRequest(endpoint string) (*http.Response, error) {
-	fullUrl := "https://pokeapi.co/api/v2/" + endpoint
-	resp, err := http.Get(fullUrl)
+func newHttpRequest(url string) (*http.Response, error) {
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http GET request: %v", err)
 	}
 	return resp, nil
 }
 
-func logHttpResponse(r *http.Response) error {
+func readJsonResponse(r *http.Response) (*jsonResponse, error) {
 	defer r.Body.Close()
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		return fmt.Errorf("error reading http request response: %v", err)
+		return nil, fmt.Errorf("error reading http request response: %v", err)
 	}
 	resp := &jsonResponse{}
 	err2 := json.Unmarshal(data, resp)
 	if err2 != nil {
-		return fmt.Errorf("error unmarshaling json response: %v", err2)
+		return nil, fmt.Errorf("error unmarshaling json response: %v", err2)
 	}
+	return resp, nil
+}
+
+func logHttpResponse(resp *jsonResponse) error {
 	for _, value := range resp.Results {
 		fmt.Println(value["name"])
 	}
